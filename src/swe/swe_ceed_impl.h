@@ -131,14 +131,11 @@ CEED_QFUNCTION_HELPER int SWEFluxReconstructionKernel(void *ctx, CeedInt Q,
     CeedScalar qL[3] = {q_left[0][i], q_left[1][i], q_left[2][i]};
     CeedScalar qR[3] = {q_right[0][i], q_right[1][i], q_right[2][i]};
 
-    // Initialize reconstructed values to cell averages
+    // init reconstructed values to cell averages
     CeedScalar qL_recon[3] = {qL[0], qL[1], qL[2]};
     CeedScalar qR_recon[3] = {qR[0], qR[1], qR[2]};
 
-
-    // ========================================================================
-    // LEFT CELL RECONSTRUCTION - FIXED GRADIENT FORMULA
-    // ========================================================================
+    // left cell reconstruction
     if (qL[0] > tiny_h) {
       CeedScalar grad_h[2] = {0.0, 0.0};
       CeedScalar grad_hu[2] = {0.0, 0.0};
@@ -150,6 +147,7 @@ CEED_QFUNCTION_HELPER int SWEFluxReconstructionKernel(void *ctx, CeedInt Q,
         CeedScalar nx = neighbor_coords[2*n][i];
         CeedScalar ny = neighbor_coords[2*n+1][i];
 
+        // get rid of invalid neighbors
         if (nx == 0.0 && ny == 0.0) continue;
 
         CeedScalar dx = nx - xl;
@@ -162,11 +160,10 @@ CEED_QFUNCTION_HELPER int SWEFluxReconstructionKernel(void *ctx, CeedInt Q,
           CeedScalar hu_n = neighbor_values[n*3 + 1][i];
           CeedScalar hv_n = neighbor_values[n*3 + 2][i];
 
-          // FIXED: Inverse distance weighting (1/d instead of 1/d²)
-          // This prevents over-amplification of small variations
+          //Inverse distance weighting 
           CeedScalar weight = 1.0 / d;
           
-          // Gradient contribution: weight * (Δh/d) * direction
+          // Gradient contribution: weight * (dh/d) * direction
           grad_h[0] += weight * (h_n - qL[0]) * (dx / d);
           grad_h[1] += weight * (h_n - qL[0]) * (dy / d);
           grad_hu[0] += weight * (hu_n - qL[1]) * (dx / d);
@@ -201,9 +198,7 @@ CEED_QFUNCTION_HELPER int SWEFluxReconstructionKernel(void *ctx, CeedInt Q,
       }
     }
 
-    // ========================================================================
-    // RIGHT CELL RECONSTRUCTION - FIXED GRADIENT FORMULA
-    // ========================================================================
+    // right cell reconstruction
     if (qR[0] > tiny_h) {
       CeedScalar grad_h[2] = {0.0, 0.0};
       CeedScalar grad_hu[2] = {0.0, 0.0};
@@ -227,10 +222,8 @@ CEED_QFUNCTION_HELPER int SWEFluxReconstructionKernel(void *ctx, CeedInt Q,
           CeedScalar hu_n = neighbor_values[12 + n*3 + 1][i];
           CeedScalar hv_n = neighbor_values[12 + n*3 + 2][i];
 
-          // FIXED: Inverse distance weighting (1/d instead of 1/d²)
           CeedScalar weight = 1.0 / d;
           
-          // Gradient contribution: weight * (Δh/d) * direction
           grad_h[0] += weight * (h_n - qR[0]) * (dx / d);
           grad_h[1] += weight * (h_n - qR[0]) * (dy / d);
           grad_hu[0] += weight * (hu_n - qR[1]) * (dx / d);
@@ -244,7 +237,6 @@ CEED_QFUNCTION_HELPER int SWEFluxReconstructionKernel(void *ctx, CeedInt Q,
       }
 
       if (n_valid >= 2 && sum_weights > 1e-12) {
-        // Normalize by sum of weights
         grad_h[0] /= sum_weights;
         grad_h[1] /= sum_weights;
         grad_hu[0] /= sum_weights;
@@ -252,7 +244,6 @@ CEED_QFUNCTION_HELPER int SWEFluxReconstructionKernel(void *ctx, CeedInt Q,
         grad_hv[0] /= sum_weights;
         grad_hv[1] /= sum_weights;
 
-        // Extrapolate from cell center to edge midpoint
         CeedScalar dx_edge = edge_mid_x - xr;
         CeedScalar dy_edge = edge_mid_y - yr;
 
@@ -260,14 +251,11 @@ CEED_QFUNCTION_HELPER int SWEFluxReconstructionKernel(void *ctx, CeedInt Q,
         qR_recon[1] = qR[1] + grad_hu[0] * dx_edge + grad_hu[1] * dy_edge;
         qR_recon[2] = qR[2] + grad_hv[0] * dx_edge + grad_hv[1] * dy_edge;
 
-        // Enforce positivity
         if (qR_recon[0] < 0.0) qR_recon[0] = 0.0;
       }
     }
 
-    // ========================================================================
-    // COMPUTE FLUXES
-    // ========================================================================
+    // computer fluxes
     CeedScalar f[3], amax;
     if (qL_recon[0] > tiny_h || qR_recon[0] > tiny_h) {
       SWERiemannFlux_Roe(gravity, tiny_h, h_anuga,
